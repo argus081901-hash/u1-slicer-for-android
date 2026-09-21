@@ -1,0 +1,46 @@
+name: Build Hansol A1 Test APK
+
+on:
+  push:
+    branches:
+      - hansol-a1-temperature-fix-v4.0.4
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Run focused unit tests
+        run: ./gradlew testDebugUnitTest --tests "com.u1.slicer.bambu.BambuImportedConfigComposerTest"
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Your-One-Slicer-HS-A1-TempFix1.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Your-One-Slicer-HS-A1-TempFix1
+          path: Your-One-Slicer-HS-A1-TempFix1.apk
+          if-no-files-found: error
+          retention-days: 14
