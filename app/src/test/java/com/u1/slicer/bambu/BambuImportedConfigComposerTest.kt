@@ -98,6 +98,54 @@ class BambuImportedConfigComposerTest {
     }
 
     @Test
+    fun `a1 petg selection replaces untouched pla temperature defaults`() {
+        val result = BambuImportedConfigComposer.compose(
+            target = SlicerTarget.BambuA1,
+            explicitOverrides = mapOf(
+                "filament_type" to listOf("PETG"),
+                "nozzle_temperature" to listOf("250"),
+            ),
+        )
+
+        assertEquals(listOf("PETG"), result.config["filament_type"])
+        assertEquals(listOf("250"), result.config["nozzle_temperature"])
+        assertEquals(listOf("250"), result.config["nozzle_temperature_initial_layer"])
+        assertEquals(listOf("70"), result.config["textured_plate_temp"])
+        assertEquals(listOf("70"), result.config["textured_plate_temp_initial_layer"])
+    }
+
+    @Test
+    fun `a1 petg preserves custom source temperatures while filling missing textured values`() {
+        val result = BambuImportedConfigComposer.compose(
+            target = SlicerTarget.BambuA1,
+            sourceConfig = mapOf(
+                "filament_type" to listOf("PETG"),
+                "nozzle_temperature" to listOf("245"),
+                "hot_plate_temp" to listOf("75"),
+                "hot_plate_temp_initial_layer" to listOf("75"),
+            ),
+        )
+
+        assertEquals(listOf("245"), result.config["nozzle_temperature"])
+        assertEquals(listOf("245"), result.config["nozzle_temperature_initial_layer"])
+        assertEquals(listOf("75"), result.config["textured_plate_temp"])
+        assertEquals(listOf("75"), result.config["textured_plate_temp_initial_layer"])
+    }
+
+    @Test
+    fun `a1 pla keeps stock 220 55 defaults`() {
+        val result = BambuImportedConfigComposer.compose(
+            target = SlicerTarget.BambuA1,
+            explicitOverrides = mapOf("filament_type" to listOf("PLA")),
+        )
+
+        assertEquals(listOf("220"), result.config["nozzle_temperature"])
+        assertEquals(listOf("220"), result.config["nozzle_temperature_initial_layer"])
+        assertEquals(listOf("55"), result.config["textured_plate_temp"])
+        assertEquals(listOf("55"), result.config["textured_plate_temp_initial_layer"])
+    }
+
+    @Test
     fun `every target retains its official identity envelope and h2d nozzle metadata`() {
         BAMBU_MACHINE_PROFILES.forEach { (target, machine) ->
             val result = BambuImportedConfigComposer.compose(target)
