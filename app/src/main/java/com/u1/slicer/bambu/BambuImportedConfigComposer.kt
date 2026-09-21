@@ -120,6 +120,14 @@ internal object BambuImportedConfigComposer {
             }
         }
 
+        // Hansol A1 customisation:
+        // The stock Bambu defaults are PLA (220/55). When Prepare selects PETG,
+        // some Bambu A1 paths carry filament_type/nozzle temperature through but
+        // leave the Textured PEI and first-layer temperatures at the PLA defaults.
+        // Resolve only values that are still TARGET_DEFAULT, so imported Bambu
+        // profiles and explicit user temperature overrides keep their own values.
+        applyA1MaterialTemperatureDefaults(target, values, provenance)
+
         firmwareSafety(target).forEach { (key, value) ->
             values[key] = value
             val old = provenance[key]
@@ -132,6 +140,76 @@ internal object BambuImportedConfigComposer {
             )
         }
         return Result(values, provenance)
+    }
+
+    private fun applyA1MaterialTemperatureDefaults(
+        target: SlicerTarget,
+        values: MutableMap<String, Any>,
+        provenance: MutableMap<String, Provenance>,
+    ) {
+        if (target != SlicerTarget.BambuA1) return
+
+        val material = firstScalar(values["filament_type"])?.uppercase() ?: return
+        val (materialNozzle, materialBed) = when (material) {
+            "PLA" -> "220" to "55"
+            "PETG" -> "250" to "70"
+            else -> return
+        }
+
+        fun isTargetDefault(key: String): Boolean =
+            provenance[key]?.disposition == Disposition.TARGET_DEFAULT
+
+        // If the selected filament type changed but its temperature did not make it
+        // through the Bambu precedence path, replace only the untouched PLA defaults.
+        if (isTargetDefault("nozzle_temperature")) {
+            put(
+                values, provenance, "nozzle_temperature", listOf(materialNozzle),
+                Disposition.TARGET_ADAPTATION,
+            )
+        }
+        if (isTargetDefault("nozzle_temperature_initial_layer")) {
+            val nozzle = firstScalar(values["nozzle_temperature"]) ?: materialNozzle
+            put(
+                values, provenance, "nozzle_temperature_initial_layer", listOf(nozzle),
+                Disposition.TARGET_ADAPTATION,
+            )
+        }
+
+        // A1 is normally used with Textured PEI. Prefer an already supplied hot-plate
+        // value (for example a custom PETG profile at 75 C); otherwise use the
+        // material-specific fallback requested for this custom build.
+        if (isTargetDefault("textured_plate_temp")) {
+            val inheritedBed = if (!isTargetDefault("hot_plate_temp")) {
+                firstScalar(values["hot_plate_temp"])
+            } else {
+                null
+            }
+            put(
+                values, provenance, "textured_plate_temp", listOf(inheritedBed ?: materialBed),
+                Disposition.TARGET_ADAPTATION,
+            )
+        }
+        if (isTargetDefault("textured_plate_temp_initial_layer")) {
+            val inheritedInitialBed = if (!isTargetDefault("hot_plate_temp_initial_layer")) {
+                firstScalar(values["hot_plate_temp_initial_layer"])
+            } else {
+                null
+            }
+            val bed = inheritedInitialBed
+                ?: firstScalar(values["textured_plate_temp"])
+                ?: materialBed
+            put(
+                values, provenance, "textured_plate_temp_initial_layer", listOf(bed),
+                Disposition.TARGET_ADAPTATION,
+            )
+        }
+    }
+
+    private fun firstScalar(value: Any?): String? = when (value) {
+        is List<*> -> value.firstOrNull()?.toString()
+        is Array<*> -> value.firstOrNull()?.toString()
+        null -> null
+        else -> value.toString()
     }
 
     private fun put(
