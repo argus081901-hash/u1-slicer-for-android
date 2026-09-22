@@ -471,14 +471,27 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         if (isCurrentPrinterAction(actionContext)) _isLightOn.value = state
     }
 
-    /** F78: writes back into the active printer's extruderPresets list. */
+    /**
+     * F78: writes back into the active printer's extruderPresets list.
+     *
+     * Bambu tray/external-spool route IDs are sparse and may not already exist in the
+     * persisted preset list. Replacing via map() silently dropped edits for those routes,
+     * including filamentProfileId. Upsert by route index so a profile selected for an
+     * external spool survives and can be reused by Prepare -> "Use loaded printer spools".
+     */
     fun updateExtruderPreset(preset: ExtruderPreset) {
         launchBoundPrinterAction { actionContext ->
             val cfg = printersRepo.config.first() ?: return@launchBoundPrinterAction
             val active = cfg.active
-            val updated = active.extruderPresets.map { if (it.index == preset.index) preset else it }
+            val updated = active.extruderPresets.toMutableList()
+            val existingIndex = updated.indexOfFirst { it.index == preset.index }
+            if (existingIndex >= 0) {
+                updated[existingIndex] = preset
+            } else {
+                updated.add(preset)
+            }
             if (!isCurrentPrinterAction(actionContext)) return@launchBoundPrinterAction
-            printersRepo.update(active.copy(extruderPresets = updated))
+            printersRepo.update(active.copy(extruderPresets = updated.sortedBy { it.index }))
         }
     }
 
