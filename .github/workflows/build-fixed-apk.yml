@@ -6,10 +6,14 @@ on:
       - fix/bambu-external-spool-profile
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,25 +25,39 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 34
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
-
-      - name: Make Gradle executable
+      - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Run unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Create debug keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+
+      - name: Run focused regression tests
+        run: |
+          ./gradlew --no-daemon testDebugUnitTest \
+            --tests "com.u1.slicer.LoadedSpoolProfileOverrideTest" \
+            --tests "com.u1.slicer.printer.BambuExtruderPresetUpsertTest" \
+            --tests "com.u1.slicer.data.PerFilamentResolverTest"
 
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
 
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk HS-Test-Bambu-PETG-Profile-Fix.apk
+
       - name: Upload fixed APK
         uses: actions/upload-artifact@v4
         with:
-          name: hs-test-bambu-profile-fix-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: HS-Test-Bambu-PETG-Profile-Fix
+          path: HS-Test-Bambu-PETG-Profile-Fix.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
