@@ -2339,6 +2339,14 @@ fun PrepareScreen(
                             onColorOverride = { idx, color ->
                                 viewModel.setFilamentColorOverride(idx, color)
                             },
+                            onFilamentAssignmentOverride = { idx, color, material, profileId ->
+                                viewModel.setFilamentAssignmentOverride(
+                                    fileIndex = idx,
+                                    color = color,
+                                    materialType = material,
+                                    filamentProfileId = profileId,
+                                )
+                            },
                             importedMixRecipe = displayedMixRecipe,
                             mixRecipeSource = mixRecipeSource,
                             onViewImportedMixRecipe = { showImportedRecipeDialog = true },
@@ -5238,6 +5246,12 @@ fun PrintSetupSection(
     filamentOverrides: Map<Int, SlicerViewModel.FilamentOverride> = emptyMap(),
     onMaterialOverride: (fileIndex: Int, materialType: String?) -> Unit = { _, _ -> },
     onColorOverride: (fileIndex: Int, color: String?) -> Unit = { _, _ -> },
+    onFilamentAssignmentOverride: (
+        fileIndex: Int,
+        color: String?,
+        materialType: String?,
+        filamentProfileId: Long?,
+    ) -> Unit = { _, _, _, _ -> },
     importedMixRecipe: MixedFilamentSliceSummary? = null,
     mixRecipeSource: MixedFilamentDefinitionSource = MixedFilamentDefinitionSource.NONE,
     onViewImportedMixRecipe: (() -> Unit)? = null,
@@ -5351,17 +5365,26 @@ fun PrintSetupSection(
                                 ?: extruderPresets.firstOrNull()
                             
                             val resolved = filamentMaterials.getOrNull(colorIdx)
+                            val overrideProfile = override?.filamentProfileId
+                                ?.let { id -> filaments.firstOrNull { it.id == id } }
                             val materialType = resolved?.first
-                                ?: override?.materialType ?: suggestedPreset?.materialType ?: "PLA"
-                            val profileId = suggestedPreset?.filamentProfileId
-                            val profile = filaments.firstOrNull { it.id == profileId }
-                            val isOverridden = override?.materialType != null
-                            
-                            val displayTemp = resolved?.second ?: if (isOverridden) {
-                                com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
-                            } else {
-                                profile?.nozzleTemp ?: com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
-                            }
+                                ?: overrideProfile?.material
+                                ?: override?.materialType
+                                ?: suggestedPreset?.materialType
+                                ?: "PLA"
+                            val suggestedProfile = suggestedPreset?.filamentProfileId
+                                ?.let { id -> filaments.firstOrNull { it.id == id } }
+                            val isOverridden = override?.materialType != null ||
+                                override?.filamentProfileId != null
+
+                            val displayTemp = resolved?.second
+                                ?: overrideProfile?.nozzleTemp
+                                ?: if (override?.materialType != null) {
+                                    com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
+                                } else {
+                                    suggestedProfile?.nozzleTemp
+                                        ?: com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
+                                }
 
                             Row(
                                 modifier = Modifier
@@ -5550,8 +5573,12 @@ fun PrintSetupSection(
                                     val preset = syncFilamentPresets.firstOrNull { it.index == slot }
                                         ?: syncFilamentPresets.firstOrNull()
                                     preset?.let {
-                                        onColorOverride(i, it.color)
-                                        onMaterialOverride(i, it.materialType)
+                                        onFilamentAssignmentOverride(
+                                            i,
+                                            it.color,
+                                            it.materialType,
+                                            it.filamentProfileId,
+                                        )
                                     }
                                 }
                                 showSyncDialog = false
