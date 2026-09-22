@@ -105,6 +105,24 @@ internal fun isLargeTriangleCount(triangleCount: Int): Boolean =
     triangleCount > com.u1.slicer.viewer.NativePreviewMesh.MAX_KOTLIN_PREVIEW_TRIANGLES
 
 /**
+ * Return presets that are valid logical slicer tool ids.
+ *
+ * Bambu's live/persisted tray route ids may be sparse (AMS-HT/external spool),
+ * but the slicer-side physical base is still the fixed 0..3 logical tool space.
+ * Persisting those route records is useful for remembering a linked profile;
+ * letting them into slice arrays would create phantom extruders.
+ */
+internal fun logicalSlicerPresets(printer: com.u1.slicer.data.Printer?): List<ExtruderPreset> {
+    val defaults = com.u1.slicer.data.defaultExtruderPresets()
+    val stored = printer?.extruderPresets ?: return defaults
+    if (printer.kind != com.u1.slicer.data.PrinterKind.BAMBU_LAN) {
+        return stored.ifEmpty { defaults }
+    }
+    val logical = stored.filter { it.index in 0 until com.u1.slicer.aipaint.SegmentationCascade.TARGET_SLOTS }
+    return if (logical.isEmpty()) defaults else logical.sortedBy { it.index }
+}
+
+/**
  * Returns the effective wipe tower depth for the Prepare preview:
  * uses the active primeVolume override (in mm) if set, otherwise falls back to height-based estimate.
  */
@@ -1923,10 +1941,14 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     // Job history
     val sliceJobs = sliceJobDao.getAll()
 
-    // Extruder slot config (from printer page, used for color mapping dialog)
-    // F78: read from active printer record so multi-printer slot edits always reflect the correct printer.
+    // Logical slicer tool presets. Bambu printer inventory can also persist sparse
+    // tray-route presets (AMS-HT/external spool ids such as 128/254) so their linked
+    // FilamentProfile survives. Those route ids are NOT slicer tool ids and must not
+    // inflate filament arrays/extruder counts. Keep only the logical 0..3 tool space
+    // here; PrinterViewModel.extruderPresets retains the full persisted route list for
+    // the Printer screen and "Use loaded printer spools".
     val extruderPresets: StateFlow<List<ExtruderPreset>> = printersRepo.activePrinter
-        .map { it?.extruderPresets ?: com.u1.slicer.data.defaultExtruderPresets() }
+        .map(::logicalSlicerPresets)
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.u1.slicer.data.defaultExtruderPresets())
 
     // F87: imported process profiles + currently active selection. The repository owns the
@@ -7124,18 +7146,9 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
             val profileMap = profiles.associateBy { it.id }
             val cookies = settingsRepo.makerWorldCookies.first()
             val printersConfig = container.printersRepository.config.first()
-            // Build filament-name-resolved extruder presets for the active printer
-            val presets = extruderPresets.value
-            val resolvedPresetsConfig = if (printersConfig != null) {
-                val resolvedPresets = presets.map { p ->
-                    p // filamentProfileId is preserved; name resolution is done at export
-                }
-                val active = printersConfig.active.copy(extruderPresets = resolvedPresets)
-                com.u1.slicer.data.PrintersConfig(
-                    printers = printersConfig.printers.map { if (it.id == active.id) active else it },
-                    activeId = printersConfig.activeId,
-                )
-            } else printersConfig
+            // Preserve the printer's full persisted preset list in backups, including
+            // sparse Bambu AMS-HT/external-spool route records and their profile ids.
+            val resolvedPresetsConfig = printersConfig
             val processProfilesConfig = container.processProfilesRepository.config.first()
             val json = SettingsBackup.export(
                 cfg, overrides, resolvedPresetsConfig?.active?.moonrakerUrl ?: "", presets, profiles,
