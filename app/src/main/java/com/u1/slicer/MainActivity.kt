@@ -1855,13 +1855,21 @@ fun PrepareScreen(
     val h2dNozzleAssignments by viewModel.h2dFilamentNozzleAssignments.collectAsState()
     val anyMixAssigned by viewModel.anyMixAssigned.collectAsState()
     val filaments by viewModel.filaments.collectAsState(initial = emptyList())
+    // SlicerViewModel exposes logical 0..3 tool presets only. PrinterViewModel keeps
+    // the full persisted Bambu route list (including sparse external/AMS-HT ids),
+    // which is what the loaded-spool picker needs to recover filamentProfileId.
     val extruderPresets by viewModel.extruderPresets.collectAsState()
+    val printerRoutePresets by printerViewModel.extruderPresets.collectAsState()
     val printerFilamentSlots by printerViewModel.printerFilamentSlots.collectAsState()
-    val prepareSyncPresets = remember(activePrinter?.kind, printerFilamentSlots, extruderPresets) {
+    val prepareSyncPresets = remember(
+        activePrinter?.kind,
+        printerFilamentSlots,
+        printerRoutePresets,
+    ) {
         buildPrepareSyncPresets(
             activePrinterKind = activePrinter?.kind,
             printerSlots = printerFilamentSlots,
-            slicerPresets = extruderPresets,
+            slicerPresets = printerRoutePresets,
         )
     }
     val copyCount by viewModel.copyCount.collectAsState()
