@@ -683,15 +683,37 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     //   - materialType = "PLA"/"PETG"/etc.; null when user hasn't overridden
     // Defaults fall back to the file's canonical list (3MF) or printer-loaded
     // data (STL). Overrides will drive slicing in Phase 2.6c.
-    data class FilamentOverride(val color: String? = null, val materialType: String? = null)
+    data class FilamentOverride(
+        val color: String? = null,
+        val materialType: String? = null,
+        val filamentProfileId: Long? = null,
+    )
     private val _filamentOverrides = MutableStateFlow<Map<Int, FilamentOverride>>(emptyMap())
     val filamentOverrides: StateFlow<Map<Int, FilamentOverride>> = _filamentOverrides.asStateFlow()
 
     fun setFilamentMaterialOverride(fileIndex: Int, materialType: String?) {
         val current = _filamentOverrides.value
         val existing = current[fileIndex] ?: FilamentOverride()
-        val next = existing.copy(materialType = materialType)
-        _filamentOverrides.value = if (next.color == null && next.materialType == null) {
+        // A direct material edit no longer describes a previously selected
+        // printer-spool profile. Clear that link; loaded-spool sync sets the
+        // selected profile again immediately after the material.
+        val next = existing.copy(materialType = materialType, filamentProfileId = null)
+        _filamentOverrides.value = if (
+            next.color == null && next.materialType == null && next.filamentProfileId == null
+        ) {
+            current - fileIndex
+        } else {
+            current + (fileIndex to next)
+        }
+    }
+
+    fun setFilamentProfileOverride(fileIndex: Int, filamentProfileId: Long?) {
+        val current = _filamentOverrides.value
+        val existing = current[fileIndex] ?: FilamentOverride()
+        val next = existing.copy(filamentProfileId = filamentProfileId)
+        _filamentOverrides.value = if (
+            next.color == null && next.materialType == null && next.filamentProfileId == null
+        ) {
             current - fileIndex
         } else {
             current + (fileIndex to next)
@@ -702,7 +724,9 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         val current = _filamentOverrides.value
         val existing = current[fileIndex] ?: FilamentOverride()
         val next = existing.copy(color = color)
-        _filamentOverrides.value = if (next.color == null && next.materialType == null) {
+        _filamentOverrides.value = if (
+            next.color == null && next.materialType == null && next.filamentProfileId == null
+        ) {
             current - fileIndex
         } else {
             current + (fileIndex to next)
@@ -2014,6 +2038,9 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         val (types, temps) = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
             canonical = list,
             overrides = overrides.mapValues { (_, ov) -> ov.color to ov.materialType },
+            profileOverrides = overrides.mapNotNull { (idx, ov) ->
+                ov.filamentProfileId?.let { idx to it }
+            }.toMap(),
             colorMapping = mapping,
             presets = presets,
             filamentLibrary = lib,
@@ -5018,10 +5045,14 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         // those files (e.g. printing PETG on a file that declared PLA). Apply
         // the fileIndex=0 override to the first slot's type/temp here so the
         // slice picks up the user's choice. See `applyNonCanonicalOverride`.
+        val nonCanonicalOverride = if (canonicalList == null) _filamentOverrides.value[0] else null
+        val nonCanonicalProfile = nonCanonicalOverride?.filamentProfileId
+            ?.let { id -> filaments.value.firstOrNull { it.id == id } }
         val (nonCanonicalTypes, nonCanonicalTemps) = applyNonCanonicalOverride(
             slotTypes = slotTypes,
             slotTemps = slotTemps,
-            override = if (canonicalList == null) _filamentOverrides.value[0] else null,
+            override = nonCanonicalOverride,
+            explicitProfile = nonCanonicalProfile,
         )
 
         val resolvedTypes = perFilamentArrays?.first ?: nonCanonicalTypes
@@ -5097,6 +5128,9 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     ): Pair<List<String>, List<Int>> = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = overrides.mapValues { (_, ov) -> ov.color to ov.materialType },
+        profileOverrides = overrides.mapNotNull { (idx, ov) ->
+            ov.filamentProfileId?.let { idx to it }
+        }.toMap(),
         colorMapping = _colorMapping.value,
         presets = presets,
         filamentLibrary = filaments.value,
@@ -5115,6 +5149,9 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     ): List<String> = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = _filamentOverrides.value.mapValues { (_, ov) -> ov.color to ov.materialType },
+        profileOverrides = _filamentOverrides.value.mapNotNull { (idx, ov) ->
+            ov.filamentProfileId?.let { idx to it }
+        }.toMap(),
         colorMapping = sliceTimeColorMapping,
         presets = extruderPresets.value,
         filamentLibrary = filaments.value,
@@ -9639,14 +9676,15 @@ internal fun applyNonCanonicalOverride(
     slotTypes: List<String>,
     slotTemps: List<Int>,
     override: SlicerViewModel.FilamentOverride?,
+    explicitProfile: FilamentProfile? = null,
 ): Pair<List<String>, List<Int>> {
-    val newType = override?.materialType
+    val newType = override?.materialType ?: explicitProfile?.material
     if (newType == null || slotTypes.isEmpty()) {
         return slotTypes to slotTemps
     }
     val overriddenTypes = listOf(newType) + slotTypes.drop(1)
     val overriddenTemps = if (slotTemps.isNotEmpty()) {
-        listOf(nozzleTempDefaultForMaterial(newType)) + slotTemps.drop(1)
+        listOf(explicitProfile?.nozzleTemp ?: nozzleTempDefaultForMaterial(newType)) + slotTemps.drop(1)
     } else {
         slotTemps
     }
