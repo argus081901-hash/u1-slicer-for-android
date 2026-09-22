@@ -4977,8 +4977,11 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                 profileOverrides = profileOverrides,
                 overrides = slicingOverrides.value,
                 hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
-                hasExplicitFilamentProfileOverride = _filamentOverrides.value.values
-                    .any { it.filamentProfileId != null },
+                hasExplicitFilamentProfileOverride = _filamentOverrides.value.values.any { override ->
+                    override.filamentProfileId?.let { profileId ->
+                        filaments.value.any { it.id == profileId }
+                    } == true
+                },
             )
             BambuImportedConfigComposer.compose(
                 target = sliceTarget,
@@ -6160,8 +6163,11 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                             profileOverrides = profileOverrides,
                             overrides = ov,
                             hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
-                            hasExplicitFilamentProfileOverride = _filamentOverrides.value.values
-                                .any { it.filamentProfileId != null },
+                            hasExplicitFilamentProfileOverride = _filamentOverrides.value.values.any { override ->
+                                override.filamentProfileId?.let { profileId ->
+                                    filaments.value.any { it.id == profileId }
+                                } == true
+                            },
                         ).keys.joinToString(separator = "|", prefix = "|", postfix = "|")
                     } else {
                         ""
