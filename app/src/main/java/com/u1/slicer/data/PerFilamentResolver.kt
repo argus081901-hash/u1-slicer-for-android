@@ -26,13 +26,12 @@ import com.u1.slicer.nozzleTempDefaultForMaterial
  * file-material authority is gated on the discriminator above. This keeps
  * B99/B125 (support filament) and B118 (single-colour slot preset) intact.
  *
- * Nozzle-temperature resolution: when the user has overridden the material,
- * the temp comes purely from the resolved material via
- * [nozzleTempDefaultForMaterial] - do NOT consult the slot's linked filament
- * profile, because that profile is tuned for whatever was previously loaded
- * (typically PLA) and would defeat the override. When there is no override,
- * the slot's linked [FilamentProfile.nozzleTemp] wins; falling back to the
- * material default if the slot has no linked profile.
+ * Nozzle-temperature resolution: an explicitly selected per-filament profile
+ * wins first. Otherwise, when the user has overridden only the material name,
+ * the temp comes from [nozzleTempDefaultForMaterial] and the mapped slot's old
+ * profile is ignored (it may describe a different material). With no material
+ * override, the mapped slot's linked [FilamentProfile.nozzleTemp] wins; finally
+ * the material default is used as a fallback.
  *
  * **Cascade-free**: an override at fileIndex N affects only the entry at
  * index N. Other filaments mapped to the same physical slot are untouched.
