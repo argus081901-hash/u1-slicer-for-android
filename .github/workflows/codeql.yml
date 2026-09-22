@@ -63,7 +63,7 @@ jobs:
       # a no-op-build commit (e.g. docs-only) is a full cache hit, nothing compiles,
       # and CodeQL fails with "no source code seen during build" (exit 32 at finalize).
       - name: Build
-        run: ./gradlew clean assembleDebug --no-daemon --no-build-cache
+        run: ./gradlew clean testDebugUnitTest assembleDebug --no-daemon --no-build-cache
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
