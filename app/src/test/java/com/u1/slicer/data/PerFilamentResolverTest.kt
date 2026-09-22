@@ -338,6 +338,41 @@ class PerFilamentResolverTest {
     }
 
     @Test
+    fun explicitProfileOverride_preservesCustomPetgTemperature() {
+        val library = listOf(
+            FilamentProfile(
+                id = 99,
+                name = "Generic PETG tuned",
+                material = "PETG",
+                nozzleTemp = 250,
+                bedTemp = 70,
+                retractLength = 0.8f,
+                retractSpeed = 45f,
+            )
+        )
+        val canonical = CanonicalFilamentList(
+            filaments = listOf(
+                FilamentEntry(0, "#000000", "PLA", FilamentSource.FILE_COLOUR),
+            )
+        )
+        val presets = listOf(
+            ExtruderPreset(index = 0, materialType = "PLA", filamentProfileId = 42)
+        )
+
+        val (types, temps) = resolvePerFilamentTypeAndTemp(
+            canonical = canonical,
+            overrides = mapOf(0 to ("#000000" to "PETG")),
+            colorMapping = listOf(0),
+            presets = presets,
+            filamentLibrary = library,
+            profileOverrides = mapOf(0 to 99L),
+        )
+
+        assertEquals(listOf("PETG"), types)
+        assertEquals(listOf(250), temps)
+    }
+
+    @Test
     fun overrideMaterial_bypassesLinkedFilamentProfileTemp() {
         // The linked profile is for PLA at 215°. User overrides fileIdx 0
         // to PETG. Expected: PETG default (235°), NOT the 215° from the
