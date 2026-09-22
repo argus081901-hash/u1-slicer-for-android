@@ -170,6 +170,32 @@ class BambuBetaUiPolicyTest {
     }
 
     @Test
+    fun `buildBambuSlotPresets preserves saved profile id for external spool route`() {
+        val presets = buildBambuSlotPresets(
+            printerSlots = listOf(
+                FilamentSlot(
+                    index = 254,
+                    label = "External spool",
+                    color = "#101010",
+                    loaded = true,
+                    materialType = "PETG",
+                )
+            ),
+            fallbackPresets = listOf(
+                ExtruderPreset(
+                    index = 254,
+                    color = "#000000",
+                    materialType = "PETG",
+                    filamentProfileId = 77L,
+                )
+            ),
+        )
+
+        assertEquals(77L, presets.single().filamentProfileId)
+        assertEquals("External spool", presets.single().label)
+    }
+
+    @Test
     fun `prepare sync exposes every loaded Bambu route including sparse and external ids`() {
         val slicerPresets = (0..3).map { index ->
             ExtruderPreset(index = index, color = "#AAAAAA", materialType = "PLA")

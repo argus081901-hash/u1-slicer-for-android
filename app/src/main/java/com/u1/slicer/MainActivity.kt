@@ -1855,13 +1855,21 @@ fun PrepareScreen(
     val h2dNozzleAssignments by viewModel.h2dFilamentNozzleAssignments.collectAsState()
     val anyMixAssigned by viewModel.anyMixAssigned.collectAsState()
     val filaments by viewModel.filaments.collectAsState(initial = emptyList())
+    // SlicerViewModel exposes logical 0..3 tool presets only. PrinterViewModel keeps
+    // the full persisted Bambu route list (including sparse external/AMS-HT ids),
+    // which is what the loaded-spool picker needs to recover filamentProfileId.
     val extruderPresets by viewModel.extruderPresets.collectAsState()
+    val printerRoutePresets by printerViewModel.extruderPresets.collectAsState()
     val printerFilamentSlots by printerViewModel.printerFilamentSlots.collectAsState()
-    val prepareSyncPresets = remember(activePrinter?.kind, printerFilamentSlots, extruderPresets) {
+    val prepareSyncPresets = remember(
+        activePrinter?.kind,
+        printerFilamentSlots,
+        printerRoutePresets,
+    ) {
         buildPrepareSyncPresets(
             activePrinterKind = activePrinter?.kind,
             printerSlots = printerFilamentSlots,
-            slicerPresets = extruderPresets,
+            slicerPresets = printerRoutePresets,
         )
     }
     val copyCount by viewModel.copyCount.collectAsState()
@@ -2338,6 +2346,14 @@ fun PrepareScreen(
                             },
                             onColorOverride = { idx, color ->
                                 viewModel.setFilamentColorOverride(idx, color)
+                            },
+                            onFilamentAssignmentOverride = { idx, color, material, profileId ->
+                                viewModel.setFilamentAssignmentOverride(
+                                    fileIndex = idx,
+                                    color = color,
+                                    materialType = material,
+                                    filamentProfileId = profileId,
+                                )
                             },
                             importedMixRecipe = displayedMixRecipe,
                             mixRecipeSource = mixRecipeSource,
@@ -5238,6 +5254,12 @@ fun PrintSetupSection(
     filamentOverrides: Map<Int, SlicerViewModel.FilamentOverride> = emptyMap(),
     onMaterialOverride: (fileIndex: Int, materialType: String?) -> Unit = { _, _ -> },
     onColorOverride: (fileIndex: Int, color: String?) -> Unit = { _, _ -> },
+    onFilamentAssignmentOverride: (
+        fileIndex: Int,
+        color: String?,
+        materialType: String?,
+        filamentProfileId: Long?,
+    ) -> Unit = { _, _, _, _ -> },
     importedMixRecipe: MixedFilamentSliceSummary? = null,
     mixRecipeSource: MixedFilamentDefinitionSource = MixedFilamentDefinitionSource.NONE,
     onViewImportedMixRecipe: (() -> Unit)? = null,
@@ -5351,17 +5373,26 @@ fun PrintSetupSection(
                                 ?: extruderPresets.firstOrNull()
                             
                             val resolved = filamentMaterials.getOrNull(colorIdx)
+                            val overrideProfile = override?.filamentProfileId
+                                ?.let { id -> filaments.firstOrNull { it.id == id } }
                             val materialType = resolved?.first
-                                ?: override?.materialType ?: suggestedPreset?.materialType ?: "PLA"
-                            val profileId = suggestedPreset?.filamentProfileId
-                            val profile = filaments.firstOrNull { it.id == profileId }
-                            val isOverridden = override?.materialType != null
-                            
-                            val displayTemp = resolved?.second ?: if (isOverridden) {
-                                com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
-                            } else {
-                                profile?.nozzleTemp ?: com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
-                            }
+                                ?: overrideProfile?.material
+                                ?: override?.materialType
+                                ?: suggestedPreset?.materialType
+                                ?: "PLA"
+                            val suggestedProfile = suggestedPreset?.filamentProfileId
+                                ?.let { id -> filaments.firstOrNull { it.id == id } }
+                            val isOverridden = override?.materialType != null ||
+                                override?.filamentProfileId != null
+
+                            val displayTemp = resolved?.second
+                                ?: overrideProfile?.nozzleTemp
+                                ?: if (override?.materialType != null) {
+                                    com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
+                                } else {
+                                    suggestedProfile?.nozzleTemp
+                                        ?: com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
+                                }
 
                             Row(
                                 modifier = Modifier
@@ -5538,7 +5569,8 @@ fun PrintSetupSection(
                             title = if (isBambuPrinter) "Use loaded printer spools" else "Sync filaments from printer",
                             description = if (isBambuPrinter) {
                                 "Choose a loaded AMS, AMS-HT, or external spool for each model filament. " +
-                                    "This copies its colour and material into the slice; final tray and nozzle routing is confirmed when you send."
+                                    "This copies its colour, material, and linked filament profile into the slice; " +
+                                    "final tray and nozzle routing is confirmed when you send."
                             } else {
                                 "Override the file's colours and materials to match the physical loaded extruders."
                             },
@@ -5550,8 +5582,12 @@ fun PrintSetupSection(
                                     val preset = syncFilamentPresets.firstOrNull { it.index == slot }
                                         ?: syncFilamentPresets.firstOrNull()
                                     preset?.let {
-                                        onColorOverride(i, it.color)
-                                        onMaterialOverride(i, it.materialType)
+                                        onFilamentAssignmentOverride(
+                                            i,
+                                            it.color,
+                                            it.materialType,
+                                            it.filamentProfileId,
+                                        )
                                     }
                                 }
                                 showSyncDialog = false

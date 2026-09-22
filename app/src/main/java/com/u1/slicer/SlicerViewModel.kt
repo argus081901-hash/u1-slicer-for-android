@@ -105,6 +105,24 @@ internal fun isLargeTriangleCount(triangleCount: Int): Boolean =
     triangleCount > com.u1.slicer.viewer.NativePreviewMesh.MAX_KOTLIN_PREVIEW_TRIANGLES
 
 /**
+ * Return presets that are valid logical slicer tool ids.
+ *
+ * Bambu's live/persisted tray route ids may be sparse (AMS-HT/external spool),
+ * but the slicer-side physical base is still the fixed 0..3 logical tool space.
+ * Persisting those route records is useful for remembering a linked profile;
+ * letting them into slice arrays would create phantom extruders.
+ */
+internal fun logicalSlicerPresets(printer: com.u1.slicer.data.Printer?): List<ExtruderPreset> {
+    val defaults = com.u1.slicer.data.defaultExtruderPresets()
+    val stored = printer?.extruderPresets ?: return defaults
+    if (printer.kind != com.u1.slicer.data.PrinterKind.BAMBU_LAN) {
+        return stored.ifEmpty { defaults }
+    }
+    val logical = stored.filter { it.index in 0 until com.u1.slicer.aipaint.SegmentationCascade.TARGET_SLOTS }
+    return if (logical.isEmpty()) defaults else logical.sortedBy { it.index }
+}
+
+/**
  * Returns the effective wipe tower depth for the Prepare preview:
  * uses the active primeVolume override (in mm) if set, otherwise falls back to height-based estimate.
  */
@@ -128,6 +146,7 @@ internal fun buildExplicitBambuProfileOverrides(
     profileOverrides: Map<String, Any>,
     overrides: SlicingOverrides,
     hasFilamentOverrides: Boolean,
+    hasExplicitFilamentProfileOverride: Boolean = false,
 ): Map<String, Any> {
     val keys = linkedSetOf<String>()
     fun include(mode: OverrideMode, vararg names: String) {
@@ -179,9 +198,15 @@ internal fun buildExplicitBambuProfileOverrides(
             )
         )
     }
+    if (hasExplicitFilamentProfileOverride) {
+        keys.addAll(listOf("bed_temperature", "bed_temperature_initial_layer"))
+    }
 
     val result = profileOverrides.filterKeys { it in keys }.toMutableMap()
-    if (overrides.bedTemp.mode != OverrideMode.USE_FILE) {
+    if (
+        overrides.bedTemp.mode != OverrideMode.USE_FILE ||
+        hasExplicitFilamentProfileOverride
+    ) {
         val value = profileOverrides["bed_temperature"] ?: return result
         result["hot_plate_temp"] = value
         result["hot_plate_temp_initial_layer"] = value
@@ -683,15 +708,24 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     //   - materialType = "PLA"/"PETG"/etc.; null when user hasn't overridden
     // Defaults fall back to the file's canonical list (3MF) or printer-loaded
     // data (STL). Overrides will drive slicing in Phase 2.6c.
-    data class FilamentOverride(val color: String? = null, val materialType: String? = null)
+    data class FilamentOverride(
+        val color: String? = null,
+        val materialType: String? = null,
+        val filamentProfileId: Long? = null,
+    )
     private val _filamentOverrides = MutableStateFlow<Map<Int, FilamentOverride>>(emptyMap())
     val filamentOverrides: StateFlow<Map<Int, FilamentOverride>> = _filamentOverrides.asStateFlow()
 
     fun setFilamentMaterialOverride(fileIndex: Int, materialType: String?) {
         val current = _filamentOverrides.value
         val existing = current[fileIndex] ?: FilamentOverride()
-        val next = existing.copy(materialType = materialType)
-        _filamentOverrides.value = if (next.color == null && next.materialType == null) {
+        // A manual material change intentionally detaches any previously synced
+        // filament profile; otherwise a PETG/PLA profile selected earlier could
+        // keep forcing its tuned temperature after the material chip changed.
+        val next = existing.copy(materialType = materialType, filamentProfileId = null)
+        _filamentOverrides.value = if (
+            next.color == null && next.materialType == null && next.filamentProfileId == null
+        ) {
             current - fileIndex
         } else {
             current + (fileIndex to next)
@@ -702,7 +736,34 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         val current = _filamentOverrides.value
         val existing = current[fileIndex] ?: FilamentOverride()
         val next = existing.copy(color = color)
-        _filamentOverrides.value = if (next.color == null && next.materialType == null) {
+        _filamentOverrides.value = if (
+            next.color == null && next.materialType == null && next.filamentProfileId == null
+        ) {
+            current - fileIndex
+        } else {
+            current + (fileIndex to next)
+        }
+    }
+
+    /**
+     * Apply a loaded-printer-spool assignment as one atomic override so colour,
+     * material and the linked FilamentProfile stay together.
+     */
+    fun setFilamentAssignmentOverride(
+        fileIndex: Int,
+        color: String?,
+        materialType: String?,
+        filamentProfileId: Long?,
+    ) {
+        val current = _filamentOverrides.value
+        val next = FilamentOverride(
+            color = color,
+            materialType = materialType,
+            filamentProfileId = filamentProfileId,
+        )
+        _filamentOverrides.value = if (
+            next.color == null && next.materialType == null && next.filamentProfileId == null
+        ) {
             current - fileIndex
         } else {
             current + (fileIndex to next)
@@ -1880,10 +1941,14 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     // Job history
     val sliceJobs = sliceJobDao.getAll()
 
-    // Extruder slot config (from printer page, used for color mapping dialog)
-    // F78: read from active printer record so multi-printer slot edits always reflect the correct printer.
+    // Logical slicer tool presets. Bambu printer inventory can also persist sparse
+    // tray-route presets (AMS-HT/external spool ids such as 128/254) so their linked
+    // FilamentProfile survives. Those route ids are NOT slicer tool ids and must not
+    // inflate filament arrays/extruder counts. Keep only the logical 0..3 tool space
+    // here; PrinterViewModel.extruderPresets retains the full persisted route list for
+    // the Printer screen and "Use loaded printer spools".
     val extruderPresets: StateFlow<List<ExtruderPreset>> = printersRepo.activePrinter
-        .map { it?.extruderPresets ?: com.u1.slicer.data.defaultExtruderPresets() }
+        .map(::logicalSlicerPresets)
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.u1.slicer.data.defaultExtruderPresets())
 
     // F87: imported process profiles + currently active selection. The repository owns the
@@ -2014,6 +2079,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         val (types, temps) = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
             canonical = list,
             overrides = overrides.mapValues { (_, ov) -> ov.color to ov.materialType },
+            profileOverrides = overrides.mapValues { (_, ov) -> ov.filamentProfileId },
             colorMapping = mapping,
             presets = presets,
             filamentLibrary = lib,
@@ -4933,6 +4999,11 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                 profileOverrides = profileOverrides,
                 overrides = slicingOverrides.value,
                 hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
+                hasExplicitFilamentProfileOverride = _filamentOverrides.value.values.any { override ->
+                    override.filamentProfileId?.let { profileId ->
+                        filaments.value.any { it.id == profileId }
+                    } == true
+                },
             )
             BambuImportedConfigComposer.compose(
                 target = sliceTarget,
@@ -4987,6 +5058,19 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         // apply per file filament, not per slot, so a non-canonical
         // single-filament file has nothing to override against here.
         val originalPresets = extruderPresets.value
+        // A loaded-spool assignment with a linked FilamentProfile is an explicit
+        // user choice. If every explicitly assigned profile agrees on bed temp,
+        // use that temperature for this slice. We deliberately do not guess when
+        // a multi-material job selects profiles with conflicting bed temps.
+        val explicitProfileBedTemps = _filamentOverrides.value.values
+            .mapNotNull { it.filamentProfileId }
+            .mapNotNull { id -> filaments.value.firstOrNull { it.id == id }?.bedTemp }
+            .distinct()
+        val effectiveCfg = if (explicitProfileBedTemps.size == 1) {
+            cfg.copy(bedTemp = explicitProfileBedTemps.single())
+        } else {
+            cfg
+        }
         // B105: for non-canonical files with a known slot set (usedSlots != null),
         // derive types from the used slots only. Using all 4 presets causes
         // filamentCount=4, inflating nozzle_temperature/filament_type arrays in
@@ -5022,6 +5106,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
             slotTypes = slotTypes,
             slotTemps = slotTemps,
             override = if (canonicalList == null) _filamentOverrides.value[0] else null,
+            filamentLibrary = filaments.value,
         )
 
         val resolvedTypes = perFilamentArrays?.first ?: nonCanonicalTypes
@@ -5063,7 +5148,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         return buildProfileOverridesImpl(
-            cfg = cfg,
+            cfg = effectiveCfg,
             ov = slicingOverrides.value,
             slotCount = slotCount,
             filamentCount = filamentCount,
@@ -5097,6 +5182,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     ): Pair<List<String>, List<Int>> = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = overrides.mapValues { (_, ov) -> ov.color to ov.materialType },
+        profileOverrides = overrides.mapValues { (_, ov) -> ov.filamentProfileId },
         colorMapping = _colorMapping.value,
         presets = presets,
         filamentLibrary = filaments.value,
@@ -5115,6 +5201,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
     ): List<String> = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = _filamentOverrides.value.mapValues { (_, ov) -> ov.color to ov.materialType },
+        profileOverrides = _filamentOverrides.value.mapValues { (_, ov) -> ov.filamentProfileId },
         colorMapping = sliceTimeColorMapping,
         presets = extruderPresets.value,
         filamentLibrary = filaments.value,
@@ -6098,6 +6185,11 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                             profileOverrides = profileOverrides,
                             overrides = ov,
                             hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
+                            hasExplicitFilamentProfileOverride = _filamentOverrides.value.values.any { override ->
+                                override.filamentProfileId?.let { profileId ->
+                                    filaments.value.any { it.id == profileId }
+                                } == true
+                            },
                         ).keys.joinToString(separator = "|", prefix = "|", postfix = "|")
                     } else {
                         ""
@@ -6148,6 +6240,8 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                             canonical = canonicalForPatch,
                             overrides = _filamentOverrides.value
                                 .mapValues { (_, ov) -> ov.color to ov.materialType },
+                            profileOverrides = _filamentOverrides.value
+                                .mapValues { (_, ov) -> ov.filamentProfileId },
                             colorMapping = _colorMapping.value,
                             presets = basePresets,
                             filamentLibrary = filaments.value,
@@ -6181,6 +6275,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                                 usedSlotsForPatch, basePresets, filaments.value
                             ),
                             override = nonCanonicalOverride0,
+                            filamentLibrary = filaments.value,
                         ).first
                         ntTemps = applyNonCanonicalOverride(
                             slotTypes = resolveNonCanonicalHeaderPatchTypes(usedSlotsForPatch, basePresets),
@@ -6188,6 +6283,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                                 usedSlotsForPatch, basePresets, filaments.value
                             ),
                             override = nonCanonicalOverride0,
+                            filamentLibrary = filaments.value,
                         ).second
                     }
                     val ftPatched = fixFilamentTypeHeader(result.gcodePath, ftTypes)
@@ -7050,18 +7146,9 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
             val profileMap = profiles.associateBy { it.id }
             val cookies = settingsRepo.makerWorldCookies.first()
             val printersConfig = container.printersRepository.config.first()
-            // Build filament-name-resolved extruder presets for the active printer
-            val presets = extruderPresets.value
-            val resolvedPresetsConfig = if (printersConfig != null) {
-                val resolvedPresets = presets.map { p ->
-                    p // filamentProfileId is preserved; name resolution is done at export
-                }
-                val active = printersConfig.active.copy(extruderPresets = resolvedPresets)
-                com.u1.slicer.data.PrintersConfig(
-                    printers = printersConfig.printers.map { if (it.id == active.id) active else it },
-                    activeId = printersConfig.activeId,
-                )
-            } else printersConfig
+            // Preserve the printer's full persisted preset list in backups, including
+            // sparse Bambu AMS-HT/external-spool route records and their profile ids.
+            val resolvedPresetsConfig = printersConfig
             val processProfilesConfig = container.processProfilesRepository.config.first()
             val json = SettingsBackup.export(
                 cfg, overrides, resolvedPresetsConfig?.active?.moonrakerUrl ?: "", presets, profiles,
@@ -9504,10 +9591,12 @@ internal fun resolveFilamentTypesForHeaderPatch(
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
     padTo: Int = canonical.size,
+    profileOverrides: Map<Int, Long?> = emptyMap(),
 ): List<String> {
     val resolved = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = overrides,
+        profileOverrides = profileOverrides,
         colorMapping = colorMapping,
         presets = presets,
         filamentLibrary = filamentLibrary,
@@ -9627,8 +9716,9 @@ internal fun resolveNonCanonicalHeaderPatchTypes(
  * filament_type / nozzle_temperature lists for non-canonical files (STL,
  * single-colour 3MF without per-filament metadata).
  *
- * Replaces the FIRST entry of both arrays with the override's materialType +
- * its corresponding default nozzle temp. Leaves remaining entries unchanged
+ * Replaces the FIRST entry of both arrays with the explicitly assigned
+ * filament profile's material/temp when present, otherwise the override's
+ * materialType + its corresponding default nozzle temp. Leaves remaining entries unchanged
  * — those are usually padding for support_filament / wipe_tower slots that
  * the user didn't override.
  *
@@ -9639,14 +9729,18 @@ internal fun applyNonCanonicalOverride(
     slotTypes: List<String>,
     slotTemps: List<Int>,
     override: SlicerViewModel.FilamentOverride?,
+    filamentLibrary: List<FilamentProfile> = emptyList(),
 ): Pair<List<String>, List<Int>> {
-    val newType = override?.materialType
+    val explicitProfile = override?.filamentProfileId
+        ?.let { id -> filamentLibrary.firstOrNull { it.id == id } }
+    val newType = explicitProfile?.material ?: override?.materialType
     if (newType == null || slotTypes.isEmpty()) {
         return slotTypes to slotTemps
     }
     val overriddenTypes = listOf(newType) + slotTypes.drop(1)
     val overriddenTemps = if (slotTemps.isNotEmpty()) {
-        listOf(nozzleTempDefaultForMaterial(newType)) + slotTemps.drop(1)
+        listOf(explicitProfile?.nozzleTemp ?: nozzleTempDefaultForMaterial(newType)) +
+            slotTemps.drop(1)
     } else {
         slotTemps
     }
@@ -9680,10 +9774,12 @@ internal fun resolveNozzleTempsForHeaderPatch(
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
     padTo: Int = canonical.size,
+    profileOverrides: Map<Int, Long?> = emptyMap(),
 ): List<Int> {
     val resolved = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = overrides,
+        profileOverrides = profileOverrides,
         colorMapping = colorMapping,
         presets = presets,
         filamentLibrary = filamentLibrary,

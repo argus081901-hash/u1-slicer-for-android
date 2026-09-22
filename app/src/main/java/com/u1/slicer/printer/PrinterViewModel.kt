@@ -471,12 +471,19 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         if (isCurrentPrinterAction(actionContext)) _isLightOn.value = state
     }
 
-    /** F78: writes back into the active printer's extruderPresets list. */
+    /**
+     * F78: writes back into the active printer's extruderPresets list.
+     *
+     * Bambu tray/external-spool route IDs are sparse and may not already exist in the
+     * persisted preset list. Replacing via map() silently dropped edits for those routes,
+     * including filamentProfileId. Upsert by route index so a profile selected for an
+     * external spool survives and can be reused by Prepare -> "Use loaded printer spools".
+     */
     fun updateExtruderPreset(preset: ExtruderPreset) {
         launchBoundPrinterAction { actionContext ->
             val cfg = printersRepo.config.first() ?: return@launchBoundPrinterAction
             val active = cfg.active
-            val updated = active.extruderPresets.map { if (it.index == preset.index) preset else it }
+            val updated = upsertExtruderPreset(active.extruderPresets, preset)
             if (!isCurrentPrinterAction(actionContext)) return@launchBoundPrinterAction
             printersRepo.update(active.copy(extruderPresets = updated))
         }
@@ -716,6 +723,21 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     companion object {
         internal fun shouldSwitchActivePrinter(config: PrintersConfig, requestedId: String): Boolean =
             config.activeId != requestedId && config.printers.any { it.id == requestedId }
+
+        /**
+         * Upsert by physical route id. Bambu external/AMS-HT route ids can be sparse
+         * (for example 128/254), so an edit must also create a preset when that route
+         * was not present in the persisted list yet.
+         */
+        internal fun upsertExtruderPreset(
+            existing: List<ExtruderPreset>,
+            preset: ExtruderPreset,
+        ): List<ExtruderPreset> {
+            val updated = existing.toMutableList()
+            val index = updated.indexOfFirst { it.index == preset.index }
+            if (index >= 0) updated[index] = preset else updated.add(preset)
+            return updated.sortedBy { it.index }
+        }
 
         // F82: pre-flight check for the custom G-code input. Returns the
         // sanitised script when it should be sent, or null when the input is

@@ -2,6 +2,7 @@ package com.u1.slicer.printer
 
 import com.u1.slicer.data.BambuConfig
 import com.u1.slicer.data.BambuModel
+import com.u1.slicer.data.ExtruderPreset
 import com.u1.slicer.data.Printer
 import com.u1.slicer.data.PrinterKind
 import com.u1.slicer.data.PrintersConfig
@@ -142,6 +143,42 @@ class PrinterViewModelTest {
         assertEquals("TURN_OFF_HEATERS", PrinterViewModel.sanitizeCustomGcode("TURN_OFF_HEATERS"))
         assertEquals("SET_PRESSURE_ADVANCE ADVANCE=0.05",
             PrinterViewModel.sanitizeCustomGcode("SET_PRESSURE_ADVANCE ADVANCE=0.05"))
+    }
+
+    @Test
+    fun `upsertExtruderPreset adds sparse external spool route with profile id`() {
+        val existing = defaultExtruderPresets()
+        val external = ExtruderPreset(
+            index = 254,
+            color = "#000000",
+            materialType = "PETG",
+            filamentProfileId = 42L,
+            displayLabel = "External spool",
+        )
+
+        val updated = PrinterViewModel.upsertExtruderPreset(existing, external)
+
+        assertEquals(5, updated.size)
+        assertEquals(42L, updated.first { it.index == 254 }.filamentProfileId)
+        assertEquals("PETG", updated.first { it.index == 254 }.materialType)
+    }
+
+    @Test
+    fun `upsertExtruderPreset replaces existing route without duplicating it`() {
+        val existing = listOf(
+            ExtruderPreset(index = 254, materialType = "PLA", filamentProfileId = 1L)
+        )
+        val replacement = ExtruderPreset(
+            index = 254,
+            materialType = "PETG",
+            filamentProfileId = 42L,
+        )
+
+        val updated = PrinterViewModel.upsertExtruderPreset(existing, replacement)
+
+        assertEquals(1, updated.size)
+        assertEquals(42L, updated.single().filamentProfileId)
+        assertEquals("PETG", updated.single().materialType)
     }
 
     @Test

@@ -69,4 +69,28 @@ class BambuExplicitOverridesTest {
         assertEquals(4, explicit.size)
         assertFalse(explicit.containsKey("wall_loops"))
     }
+    @Test
+    fun `explicit filament profile makes bed temperature override imported Bambu value`() {
+        val overrides = SlicingOverrides()
+        val profileOverrides = mapOf<String, Any>(
+            "bed_temperature" to mutableListOf("70"),
+            "bed_temperature_initial_layer" to mutableListOf("70"),
+            "nozzle_temperature" to mutableListOf("250"),
+            "nozzle_temperature_initial_layer" to mutableListOf("250"),
+            "filament_type" to mutableListOf("PETG"),
+        )
+
+        val result = buildExplicitBambuProfileOverrides(
+            profileOverrides = profileOverrides,
+            overrides = overrides,
+            hasFilamentOverrides = true,
+            hasExplicitFilamentProfileOverride = true,
+        )
+
+        assertEquals(mutableListOf("70"), result["bed_temperature"])
+        assertEquals(mutableListOf("70"), result["hot_plate_temp"])
+        assertEquals(mutableListOf("70"), result["textured_plate_temp"])
+        assertEquals(mutableListOf("250"), result["nozzle_temperature"])
+    }
+
 }
