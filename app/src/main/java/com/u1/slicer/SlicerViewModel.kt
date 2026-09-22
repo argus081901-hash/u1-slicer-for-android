@@ -9544,11 +9544,11 @@ internal fun computeEmbedTargetCount(
 internal fun resolveFilamentTypesForHeaderPatch(
     canonical: com.u1.slicer.data.CanonicalFilamentList,
     overrides: Map<Int, Pair<String?, String?>>,
-    profileOverrides: Map<Int, Long?> = emptyMap(),
     colorMapping: List<Int>?,
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
     padTo: Int = canonical.size,
+    profileOverrides: Map<Int, Long?> = emptyMap(),
 ): List<String> {
     val resolved = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
@@ -9727,11 +9727,11 @@ internal fun applyNonCanonicalOverride(
 internal fun resolveNozzleTempsForHeaderPatch(
     canonical: com.u1.slicer.data.CanonicalFilamentList,
     overrides: Map<Int, Pair<String?, String?>>,
-    profileOverrides: Map<Int, Long?> = emptyMap(),
     colorMapping: List<Int>?,
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
     padTo: Int = canonical.size,
+    profileOverrides: Map<Int, Long?> = emptyMap(),
 ): List<Int> {
     val resolved = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
