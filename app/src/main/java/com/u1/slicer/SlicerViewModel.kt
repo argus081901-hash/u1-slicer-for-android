@@ -6160,6 +6160,8 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                             profileOverrides = profileOverrides,
                             overrides = ov,
                             hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
+                            hasExplicitFilamentProfileOverride = _filamentOverrides.value.values
+                                .any { it.filamentProfileId != null },
                         ).keys.joinToString(separator = "|", prefix = "|", postfix = "|")
                     } else {
                         ""
