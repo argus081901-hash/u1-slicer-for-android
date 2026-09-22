@@ -476,9 +476,18 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         launchBoundPrinterAction { actionContext ->
             val cfg = printersRepo.config.first() ?: return@launchBoundPrinterAction
             val active = cfg.active
-            val updated = active.extruderPresets.map { if (it.index == preset.index) preset else it }
+            val updated = active.extruderPresets.toMutableList()
+            val existingIndex = updated.indexOfFirst { it.index == preset.index }
+            if (existingIndex >= 0) {
+                updated[existingIndex] = preset
+            } else {
+                // Bambu AMS / AMS-HT / external-spool routes can use sparse indices
+                // that are not present in the persisted preset list yet. Treat this
+                // as an upsert so a selected FilamentProfile is not silently lost.
+                updated.add(preset)
+            }
             if (!isCurrentPrinterAction(actionContext)) return@launchBoundPrinterAction
-            printersRepo.update(active.copy(extruderPresets = updated))
+            printersRepo.update(active.copy(extruderPresets = updated.sortedBy { it.index }))
         }
     }
 
