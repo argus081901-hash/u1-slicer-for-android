@@ -54,10 +54,10 @@ import com.u1.slicer.nozzleTempDefaultForMaterial
 internal fun resolvePerFilamentTypeAndTemp(
     canonical: CanonicalFilamentList,
     overrides: Map<Int, Pair<String?, String?>>,
-    profileOverrides: Map<Int, Long> = emptyMap(),
     colorMapping: List<Int>?,
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
+    profileOverrides: Map<Int, Long> = emptyMap(),
 ): Pair<List<String>, List<Int>> {
     val types = ArrayList<String>(canonical.size)
     val temps = ArrayList<Int>(canonical.size)
