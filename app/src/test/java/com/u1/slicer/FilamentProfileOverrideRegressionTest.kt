@@ -1,6 +1,10 @@
 package com.u1.slicer
 
 import com.u1.slicer.data.CanonicalFilamentList
+import com.u1.slicer.data.PrinterKind
+import com.u1.slicer.data.Printer
+import com.u1.slicer.data.BambuModel
+import com.u1.slicer.data.BambuConfig
 import com.u1.slicer.data.ExtruderPreset
 import com.u1.slicer.data.FilamentEntry
 import com.u1.slicer.data.FilamentProfile
@@ -19,6 +23,37 @@ class FilamentProfileOverrideRegressionTest {
         retractLength = 0.8f,
         retractSpeed = 45f,
     )
+
+    @Test
+    fun `logical slicer presets exclude sparse Bambu route records`() {
+        val printer = Printer(
+            id = "a1",
+            nickname = "A1",
+            kind = PrinterKind.BAMBU_LAN,
+            bambu = BambuConfig(
+                ip = "192.168.1.2",
+                accessCode = "12345678",
+                serial = "A1TEST",
+                model = BambuModel.A1,
+            ),
+            extruderPresets = listOf(
+                ExtruderPreset(index = 0, materialType = "PLA"),
+                ExtruderPreset(index = 1, materialType = "PLA"),
+                ExtruderPreset(index = 2, materialType = "PLA"),
+                ExtruderPreset(index = 3, materialType = "PLA"),
+                ExtruderPreset(
+                    index = 254,
+                    materialType = "PETG",
+                    filamentProfileId = petg250.id,
+                ),
+            ),
+        )
+
+        val logical = logicalSlicerPresets(printer)
+
+        assertEquals(listOf(0, 1, 2, 3), logical.map { it.index })
+    }
+
 
     @Test
     fun `non canonical loaded spool profile uses profile nozzle temperature`() {
