@@ -6188,6 +6188,8 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                             canonical = canonicalForPatch,
                             overrides = _filamentOverrides.value
                                 .mapValues { (_, ov) -> ov.color to ov.materialType },
+                            profileOverrides = _filamentOverrides.value
+                                .mapValues { (_, ov) -> ov.filamentProfileId },
                             colorMapping = _colorMapping.value,
                             presets = basePresets,
                             filamentLibrary = filaments.value,
@@ -9542,6 +9544,7 @@ internal fun computeEmbedTargetCount(
 internal fun resolveFilamentTypesForHeaderPatch(
     canonical: com.u1.slicer.data.CanonicalFilamentList,
     overrides: Map<Int, Pair<String?, String?>>,
+    profileOverrides: Map<Int, Long?> = emptyMap(),
     colorMapping: List<Int>?,
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
@@ -9550,6 +9553,7 @@ internal fun resolveFilamentTypesForHeaderPatch(
     val resolved = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = overrides,
+        profileOverrides = profileOverrides,
         colorMapping = colorMapping,
         presets = presets,
         filamentLibrary = filamentLibrary,
@@ -9669,8 +9673,9 @@ internal fun resolveNonCanonicalHeaderPatchTypes(
  * filament_type / nozzle_temperature lists for non-canonical files (STL,
  * single-colour 3MF without per-filament metadata).
  *
- * Replaces the FIRST entry of both arrays with the override's materialType +
- * its corresponding default nozzle temp. Leaves remaining entries unchanged
+ * Replaces the FIRST entry of both arrays with the explicitly assigned
+ * filament profile's material/temp when present, otherwise the override's
+ * materialType + its corresponding default nozzle temp. Leaves remaining entries unchanged
  * — those are usually padding for support_filament / wipe_tower slots that
  * the user didn't override.
  *
@@ -9722,6 +9727,7 @@ internal fun applyNonCanonicalOverride(
 internal fun resolveNozzleTempsForHeaderPatch(
     canonical: com.u1.slicer.data.CanonicalFilamentList,
     overrides: Map<Int, Pair<String?, String?>>,
+    profileOverrides: Map<Int, Long?> = emptyMap(),
     colorMapping: List<Int>?,
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
@@ -9730,6 +9736,7 @@ internal fun resolveNozzleTempsForHeaderPatch(
     val resolved = com.u1.slicer.data.resolvePerFilamentTypeAndTemp(
         canonical = canonical,
         overrides = overrides,
+        profileOverrides = profileOverrides,
         colorMapping = colorMapping,
         presets = presets,
         filamentLibrary = filamentLibrary,
