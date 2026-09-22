@@ -7,16 +7,17 @@ import com.u1.slicer.nozzleTempDefaultForMaterial
  * and `nozzle_temperature` arrays sent to the slicer.
  *
  * For each fileIndex `i` in [canonical], the material resolution order is:
- *   1. `overrides[i].second` - user override material from the Prepare screen.
- *   2. `canonical.filaments[i].materialType` — the file's declared material,
+ *   1. `profileOverrides[i]` — explicitly assigned FilamentProfile.
+ *   2. `overrides[i].second` - user override material from the Prepare screen.
+ *   3. `canonical.filaments[i].materialType` — the file's declared material,
  *      but ONLY when filament `i` is a genuinely *declared* spool (B128): the
  *      entry is [FilamentSource.FILE_COLOUR], the file is multi-colour, it has
  *      no paint segmentation, and `i`'s physical slot is not shared with any
  *      other filament (injective mapping). For paint-fold (SEMM/H2C),
  *      support/interface, single-colour, or slot-collision cases the file's
  *      material is NOT authoritative and resolution defers to the slot preset.
- *   3. `presets[colorMapping[i]].materialType` — the mapped physical slot.
- *   4. `"PLA"` - final fallback.
+ *   4. `presets[colorMapping[i]].materialType` — the mapped physical slot.
+ *   5. `"PLA"` - final fallback.
  *
  * B128 rationale: a normal multi-colour 3MF declares one material per filament
  * (e.g. PETG/PLA/TPU); those declared materials are the meaningful defaults the
