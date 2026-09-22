@@ -5569,7 +5569,8 @@ fun PrintSetupSection(
                             title = if (isBambuPrinter) "Use loaded printer spools" else "Sync filaments from printer",
                             description = if (isBambuPrinter) {
                                 "Choose a loaded AMS, AMS-HT, or external spool for each model filament. " +
-                                    "This copies its colour and material into the slice; final tray and nozzle routing is confirmed when you send."
+                                    "This copies its colour, material, and linked filament profile into the slice; " +
+                                    "final tray and nozzle routing is confirmed when you send."
                             } else {
                                 "Override the file's colours and materials to match the physical loaded extruders."
                             },
