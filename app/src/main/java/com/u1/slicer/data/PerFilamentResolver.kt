@@ -54,6 +54,7 @@ import com.u1.slicer.nozzleTempDefaultForMaterial
 internal fun resolvePerFilamentTypeAndTemp(
     canonical: CanonicalFilamentList,
     overrides: Map<Int, Pair<String?, String?>>,
+    profileOverrides: Map<Int, Long> = emptyMap(),
     colorMapping: List<Int>?,
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
@@ -74,6 +75,10 @@ internal fun resolvePerFilamentTypeAndTemp(
 
     for (i in 0 until canonical.size) {
         val overrideMaterial = overrides[i]?.second
+        val explicitProfileId = profileOverrides[i]
+        val explicitProfile = explicitProfileId?.let { id ->
+            filamentLibrary.firstOrNull { it.id == id }
+        }
         val slot = colorMapping?.getOrNull(i) ?: 0
         val slotPreset = presets.firstOrNull { it.index == slot }
         val fileMaterial = canonical.filaments[i].materialType
@@ -96,6 +101,7 @@ internal fun resolvePerFilamentTypeAndTemp(
         val slotMaterial = slotPreset?.materialType?.takeIf { it.isNotBlank() }
         val material = when {
             overrideMaterial != null -> overrideMaterial
+            explicitProfile != null -> explicitProfile.material
             fileMaterialWins -> fileMaterial!!
             else -> slotMaterial ?: fileMaterial ?: "PLA"
         }
@@ -106,13 +112,21 @@ internal fun resolvePerFilamentTypeAndTemp(
         // there is no override AND the resolved material equals the slot preset's
         // material. Otherwise the profile (tuned for the slot's spool) no longer
         // describes the resolved material, so we use the material's default temp.
-        val profileTempApplies = overrideMaterial == null &&
+        val slotProfileTempApplies = overrideMaterial == null &&
             slotPreset?.materialType == material
-        val profileTemp = if (profileTempApplies) {
+        val slotProfileTemp = if (slotProfileTempApplies) {
             slotPreset?.filamentProfileId
                 ?.let { id -> filamentLibrary.firstOrNull { it.id == id }?.nozzleTemp }
         } else null
-        temps.add(profileTemp ?: nozzleTempDefaultForMaterial(material))
+        // A profile explicitly selected from a loaded printer spool is more
+        // specific than the material-name fallback. Keep the saved profile
+        // temperature (for example Generic PETG 250°C) instead of collapsing
+        // to the hard-coded PETG default (235°C).
+        temps.add(
+            explicitProfile?.nozzleTemp
+                ?: slotProfileTemp
+                ?: nozzleTempDefaultForMaterial(material)
+        )
     }
     return types to temps
 }
