@@ -2336,6 +2336,9 @@ fun PrepareScreen(
                             onMaterialOverride = { idx, material ->
                                 viewModel.setFilamentMaterialOverride(idx, material)
                             },
+                            onProfileOverride = { idx, profileId ->
+                                viewModel.setFilamentProfileOverride(idx, profileId)
+                            },
                             onColorOverride = { idx, color ->
                                 viewModel.setFilamentColorOverride(idx, color)
                             },
@@ -5237,6 +5240,7 @@ fun PrintSetupSection(
     anyMixAssigned: Boolean = false,
     filamentOverrides: Map<Int, SlicerViewModel.FilamentOverride> = emptyMap(),
     onMaterialOverride: (fileIndex: Int, materialType: String?) -> Unit = { _, _ -> },
+    onProfileOverride: (fileIndex: Int, filamentProfileId: Long?) -> Unit = { _, _ -> },
     onColorOverride: (fileIndex: Int, color: String?) -> Unit = { _, _ -> },
     importedMixRecipe: MixedFilamentSliceSummary? = null,
     mixRecipeSource: MixedFilamentDefinitionSource = MixedFilamentDefinitionSource.NONE,
@@ -5552,6 +5556,11 @@ fun PrintSetupSection(
                                     preset?.let {
                                         onColorOverride(i, it.color)
                                         onMaterialOverride(i, it.materialType)
+                                        // Material selection clears any stale profile link.
+                                        // Re-attach the profile currently assigned to the
+                                        // selected loaded spool so slicing uses its real
+                                        // temperature instead of a material fallback.
+                                        onProfileOverride(i, it.filamentProfileId)
                                     }
                                 }
                                 showSyncDialog = false
