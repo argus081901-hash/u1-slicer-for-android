@@ -128,6 +128,7 @@ internal fun buildExplicitBambuProfileOverrides(
     profileOverrides: Map<String, Any>,
     overrides: SlicingOverrides,
     hasFilamentOverrides: Boolean,
+    hasExplicitFilamentProfileOverride: Boolean = false,
 ): Map<String, Any> {
     val keys = linkedSetOf<String>()
     fun include(mode: OverrideMode, vararg names: String) {
@@ -179,9 +180,15 @@ internal fun buildExplicitBambuProfileOverrides(
             )
         )
     }
+    if (hasExplicitFilamentProfileOverride) {
+        keys.addAll(listOf("bed_temperature", "bed_temperature_initial_layer"))
+    }
 
     val result = profileOverrides.filterKeys { it in keys }.toMutableMap()
-    if (overrides.bedTemp.mode != OverrideMode.USE_FILE) {
+    if (
+        overrides.bedTemp.mode != OverrideMode.USE_FILE ||
+        hasExplicitFilamentProfileOverride
+    ) {
         val value = profileOverrides["bed_temperature"] ?: return result
         result["hot_plate_temp"] = value
         result["hot_plate_temp_initial_layer"] = value
@@ -4970,6 +4977,8 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                 profileOverrides = profileOverrides,
                 overrides = slicingOverrides.value,
                 hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
+                hasExplicitFilamentProfileOverride = _filamentOverrides.value.values
+                    .any { it.filamentProfileId != null },
             )
             BambuImportedConfigComposer.compose(
                 target = sliceTarget,
@@ -5024,6 +5033,19 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         // apply per file filament, not per slot, so a non-canonical
         // single-filament file has nothing to override against here.
         val originalPresets = extruderPresets.value
+        // A loaded-spool assignment with a linked FilamentProfile is an explicit
+        // user choice. If every explicitly assigned profile agrees on bed temp,
+        // use that temperature for this slice. We deliberately do not guess when
+        // a multi-material job selects profiles with conflicting bed temps.
+        val explicitProfileBedTemps = _filamentOverrides.value.values
+            .mapNotNull { it.filamentProfileId }
+            .mapNotNull { id -> filaments.value.firstOrNull { it.id == id }?.bedTemp }
+            .distinct()
+        val effectiveCfg = if (explicitProfileBedTemps.size == 1) {
+            cfg.copy(bedTemp = explicitProfileBedTemps.single())
+        } else {
+            cfg
+        }
         // B105: for non-canonical files with a known slot set (usedSlots != null),
         // derive types from the used slots only. Using all 4 presets causes
         // filamentCount=4, inflating nozzle_temperature/filament_type arrays in
@@ -5101,7 +5123,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         return buildProfileOverridesImpl(
-            cfg = cfg,
+            cfg = effectiveCfg,
             ov = slicingOverrides.value,
             slotCount = slotCount,
             filamentCount = filamentCount,
