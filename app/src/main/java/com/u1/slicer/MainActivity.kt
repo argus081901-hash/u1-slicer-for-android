@@ -5355,17 +5355,28 @@ fun PrintSetupSection(
                                 ?: extruderPresets.firstOrNull()
                             
                             val resolved = filamentMaterials.getOrNull(colorIdx)
+                            val explicitProfile = override?.filamentProfileId
+                                ?.let { id -> filaments.firstOrNull { it.id == id } }
                             val materialType = resolved?.first
-                                ?: override?.materialType ?: suggestedPreset?.materialType ?: "PLA"
+                                ?: override?.materialType
+                                ?: explicitProfile?.material
+                                ?: suggestedPreset?.materialType
+                                ?: "PLA"
                             val profileId = suggestedPreset?.filamentProfileId
                             val profile = filaments.firstOrNull { it.id == profileId }
                             val isOverridden = override?.materialType != null
-                            
-                            val displayTemp = resolved?.second ?: if (isOverridden) {
-                                com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
-                            } else {
-                                profile?.nozzleTemp ?: com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
-                            }
+
+                            // For non-canonical STL/3MF files displayedFilamentMaterials is
+                            // empty. A loaded-spool profile must still drive the chip's
+                            // temperature so the UI matches the actual slice.
+                            val displayTemp = resolved?.second
+                                ?: explicitProfile?.nozzleTemp
+                                ?: if (isOverridden) {
+                                    com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
+                                } else {
+                                    profile?.nozzleTemp
+                                        ?: com.u1.slicer.nozzleTempDefaultForMaterial(materialType)
+                                }
 
                             Row(
                                 modifier = Modifier
