@@ -26,13 +26,14 @@ import com.u1.slicer.nozzleTempDefaultForMaterial
  * file-material authority is gated on the discriminator above. This keeps
  * B99/B125 (support filament) and B118 (single-colour slot preset) intact.
  *
- * Nozzle-temperature resolution: when the user has overridden the material,
- * the temp comes purely from the resolved material via
- * [nozzleTempDefaultForMaterial] - do NOT consult the slot's linked filament
- * profile, because that profile is tuned for whatever was previously loaded
- * (typically PLA) and would defeat the override. When there is no override,
- * the slot's linked [FilamentProfile.nozzleTemp] wins; falling back to the
- * material default if the slot has no linked profile.
+ * Nozzle-temperature resolution: an explicitly assigned filament profile for
+ * this file filament wins first. This is how Prepare's "Use loaded printer
+ * spools" preserves a user-selected Generic/Custom PETG profile (for example
+ * 250 C) instead of collapsing it to the material-only PETG default (235 C).
+ * A plain material override still bypasses the mapped slot's linked profile,
+ * because that slot profile may describe a different material. With no
+ * explicit assignment/override, the mapped slot's linked profile wins when it
+ * matches the resolved material, then the material default is the fallback.
  *
  * **Cascade-free**: an override at fileIndex N affects only the entry at
  * index N. Other filaments mapped to the same physical slot are untouched.
@@ -45,6 +46,8 @@ import com.u1.slicer.nozzleTempDefaultForMaterial
  * @param overrides Map of `fileIndex -> (colorHex?, materialType?)`. Only the
  *   second element (material) is consulted here; colour overrides flow
  *   through [applyOverridesToCanonical] separately.
+ * @param profileOverrides Map of fileIndex -> explicitly selected
+ *   [FilamentProfile.id]. Used by loaded-spool/profile assignment paths.
  * @param colorMapping `fileIndex -> physicalSlot` mapping; may be null for
  *   single-colour files (defaults to slot 0 for every entry).
  * @param presets The user's extruder presets (one per physical slot).
@@ -54,6 +57,7 @@ import com.u1.slicer.nozzleTempDefaultForMaterial
 internal fun resolvePerFilamentTypeAndTemp(
     canonical: CanonicalFilamentList,
     overrides: Map<Int, Pair<String?, String?>>,
+    profileOverrides: Map<Int, Long?> = emptyMap(),
     colorMapping: List<Int>?,
     presets: List<ExtruderPreset>,
     filamentLibrary: List<FilamentProfile>,
@@ -73,6 +77,8 @@ internal fun resolvePerFilamentTypeAndTemp(
     val declaredContext = canonical.size > 1 && canonical.paintStateMap.isEmpty()
 
     for (i in 0 until canonical.size) {
+        val explicitProfile = profileOverrides[i]
+            ?.let { id -> filamentLibrary.firstOrNull { it.id == id } }
         val overrideMaterial = overrides[i]?.second
         val slot = colorMapping?.getOrNull(i) ?: 0
         val slotPreset = presets.firstOrNull { it.index == slot }
@@ -95,24 +101,28 @@ internal fun resolvePerFilamentTypeAndTemp(
         // material name.
         val slotMaterial = slotPreset?.materialType?.takeIf { it.isNotBlank() }
         val material = when {
+            explicitProfile != null -> explicitProfile.material
             overrideMaterial != null -> overrideMaterial
             fileMaterialWins -> fileMaterial!!
             else -> slotMaterial ?: fileMaterial ?: "PLA"
         }
         types.add(material)
 
-        // Nozzle temp: the slot's linked filament-profile temp applies only when
-        // the resolved material actually comes from (or matches) that slot — i.e.
-        // there is no override AND the resolved material equals the slot preset's
-        // material. Otherwise the profile (tuned for the slot's spool) no longer
-        // describes the resolved material, so we use the material's default temp.
-        val profileTempApplies = overrideMaterial == null &&
+        // Nozzle temp: an explicitly assigned profile is authoritative for this
+        // file filament. Otherwise the mapped slot's linked profile applies only
+        // when there is no material override and its material still matches.
+        val slotProfileTempApplies = explicitProfile == null &&
+            overrideMaterial == null &&
             slotPreset?.materialType == material
-        val profileTemp = if (profileTempApplies) {
+        val slotProfileTemp = if (slotProfileTempApplies) {
             slotPreset?.filamentProfileId
                 ?.let { id -> filamentLibrary.firstOrNull { it.id == id }?.nozzleTemp }
         } else null
-        temps.add(profileTemp ?: nozzleTempDefaultForMaterial(material))
+        temps.add(
+            explicitProfile?.nozzleTemp
+                ?: slotProfileTemp
+                ?: nozzleTempDefaultForMaterial(material)
+        )
     }
     return types to temps
 }
