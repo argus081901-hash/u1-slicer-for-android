@@ -38,6 +38,22 @@ import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 
+internal fun upsertExtruderPreset(
+    presets: List<ExtruderPreset>,
+    preset: ExtruderPreset,
+): List<ExtruderPreset> {
+    val updated = presets.toMutableList()
+    val existingIndex = updated.indexOfFirst { it.index == preset.index }
+    if (existingIndex >= 0) {
+        updated[existingIndex] = preset
+    } else {
+        // Bambu AMS / AMS-HT / external-spool routes can use sparse indices
+        // that are not present in the persisted preset list yet.
+        updated.add(preset)
+    }
+    return updated.sortedBy { it.index }
+}
+
 class PrinterViewModel(application: Application) : AndroidViewModel(application) {
 
     private val printerRepo = (application as U1SlicerApplication).container.printerRepository
@@ -476,7 +492,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         launchBoundPrinterAction { actionContext ->
             val cfg = printersRepo.config.first() ?: return@launchBoundPrinterAction
             val active = cfg.active
-            val updated = active.extruderPresets.map { if (it.index == preset.index) preset else it }
+            val updated = upsertExtruderPreset(active.extruderPresets, preset)
             if (!isCurrentPrinterAction(actionContext)) return@launchBoundPrinterAction
             printersRepo.update(active.copy(extruderPresets = updated))
         }

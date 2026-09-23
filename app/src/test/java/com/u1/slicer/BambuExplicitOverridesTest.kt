@@ -51,6 +51,35 @@ class BambuExplicitOverridesTest {
     }
 
     @Test
+    fun `geometry only bambu input uses resolved petg nozzle and bed temperatures`() {
+        val profile = mapOf<String, Any>(
+            "filament_type" to listOf("PETG"),
+            "nozzle_temperature" to listOf("250"),
+            "nozzle_temperature_initial_layer" to listOf("250"),
+            "bed_temperature" to listOf("75"),
+            "wall_loops" to "7",
+        )
+
+        val explicit = buildExplicitBambuProfileOverrides(
+            profileOverrides = profile,
+            overrides = SlicingOverrides(),
+            hasFilamentOverrides = false,
+            forceResolvedThermals = true,
+        )
+
+        assertEquals(listOf("PETG"), explicit["filament_type"])
+        assertEquals(listOf("250"), explicit["nozzle_temperature"])
+        assertEquals(listOf("250"), explicit["nozzle_temperature_initial_layer"])
+        assertEquals(listOf("75"), explicit["hot_plate_temp"])
+        assertEquals(listOf("75"), explicit["hot_plate_temp_initial_layer"])
+        assertEquals(listOf("75"), explicit["textured_plate_temp"])
+        assertEquals(listOf("75"), explicit["textured_plate_temp_initial_layer"])
+        assertEquals(listOf("75"), explicit["cool_plate_temp"])
+        assertEquals(listOf("75"), explicit["cool_plate_temp_initial_layer"])
+        assertFalse(explicit.containsKey("wall_loops"))
+    }
+
+    @Test
     fun `prepare filament edits opt in only the filament arrays`() {
         val profile = mapOf<String, Any>(
             "filament_type" to listOf("PETG"),

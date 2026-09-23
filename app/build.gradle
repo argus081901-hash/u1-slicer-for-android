@@ -12,8 +12,8 @@ android {
         applicationId "com.u1.slicer.orca"
         minSdk 26
         targetSdk 34
-        versionCode 401
-        versionName "4.0.1"
+        versionCode 407
+        versionName "4.0.7-hs-faststart"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -41,6 +41,8 @@ android {
         debug {
             minifyEnabled false
             signingConfig signingConfigs.debug
+            applicationIdSuffix ".hstest3"
+            versionNameSuffix "-hstest"
         }
     }
 

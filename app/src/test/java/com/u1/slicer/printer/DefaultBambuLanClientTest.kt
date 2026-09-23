@@ -219,6 +219,29 @@ class DefaultBambuLanClientTest {
     }
 
     @Test
+    fun `modern a1 project payload skips vibration and extrusion calibration`() {
+        val print = JSONObject(
+            DefaultBambuLanClient.projectFileCommandPayload(
+                sequenceId = 17,
+                submissionId = "1700",
+                remoteName = "a1-fast.gcode.3mf",
+                plateId = 1,
+                amsMapping = listOf(-1),
+                useAms = false,
+                subtaskName = "a1-fast",
+                model = BambuModel.A1,
+                firmwareVersion = "01.05.00.00",
+            ),
+        ).getJSONObject("print")
+
+        assertFalse(print.getBoolean("vibration_cali"))
+        assertFalse(print.getBoolean("flow_cali"))
+        assertEquals(0, print.getInt("extrude_cali_flag"))
+        assertFalse(print.getBoolean("bed_leveling"))
+        assertEquals(2, print.getInt("auto_bed_leveling"))
+    }
+
+    @Test
     fun `p2s project payload keeps the cache route and skips unsupported vibration calibration`() {
         val print = JSONObject(
             DefaultBambuLanClient.projectFileCommandPayload(
