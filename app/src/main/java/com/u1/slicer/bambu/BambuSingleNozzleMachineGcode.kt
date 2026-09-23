@@ -100,13 +100,6 @@ internal object BambuSingleNozzleMachineGcode {
         result = result.replace("G1 E50 F200", "G1 E25 F200")
         result = result.replace("G1 E5 F200", "G1 E3 F200")
 
-        // Shorten the always-run pre-print primer line. Dynamic/flow
-        // calibration is disabled separately in the project command.
-        result = result.replace(
-            "G0 X128 E8 F{outer_wall_volumetric_speed/(24/20) * 60}",
-            "G0 X128 E3 F{outer_wall_volumetric_speed/(24/20) * 60}",
-        )
-
         return result
     }
 
