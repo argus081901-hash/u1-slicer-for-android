@@ -45,6 +45,7 @@ jobs:
         run: |
           ./gradlew --no-daemon testDebugUnitTest \
             --tests "com.u1.slicer.LoadedSpoolProfileOverrideTest" \
+            --tests "com.u1.slicer.BambuExplicitOverridesTest" \
             --tests "com.u1.slicer.printer.BambuExtruderPresetUpsertTest" \
             --tests "com.u1.slicer.data.PerFilamentResolverTest"
 
