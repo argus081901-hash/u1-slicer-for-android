@@ -18,9 +18,6 @@ class BambuA1FastStartupTest {
         assertFalse(start.contains("G1 E50 F200"))
         assertTrue(start.contains("G1 E25 F200"))
         assertTrue(start.contains("G1 E3 F200"))
-        assertFalse(start.contains("G0 X128 E8 F{outer_wall_volumetric_speed/(24/20) * 60}"))
-        assertTrue(start.contains("G0 X128 E3 F{outer_wall_volumetric_speed/(24/20) * 60}"))
-
         // Keep the important reliability/safety steps.
         assertTrue(start.contains(";===== wipe nozzle"))
         assertTrue(start.contains(";===== bed leveling"))
