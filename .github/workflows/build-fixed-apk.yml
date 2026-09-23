@@ -47,7 +47,7 @@ jobs:
             --tests "com.u1.slicer.LoadedSpoolProfileOverrideTest" \
             --tests "com.u1.slicer.BambuExplicitOverridesTest" \
             --tests "com.u1.slicer.bambu.BambuA1FastStartupTest" \
-            --tests "com.u1.slicer.printer.DefaultBambuLanClientTest" \
+            --tests "com.u1.slicer.printer.BambuA1FastStartPayloadTest" \
             --tests "com.u1.slicer.printer.BambuExtruderPresetUpsertTest" \
             --tests "com.u1.slicer.data.PerFilamentResolverTest"
 
