@@ -128,6 +128,7 @@ internal fun buildExplicitBambuProfileOverrides(
     profileOverrides: Map<String, Any>,
     overrides: SlicingOverrides,
     hasFilamentOverrides: Boolean,
+    forceResolvedThermals: Boolean = false,
 ): Map<String, Any> {
     val keys = linkedSetOf<String>()
     fun include(mode: OverrideMode, vararg names: String) {
@@ -171,7 +172,7 @@ internal fun buildExplicitBambuProfileOverrides(
     include(overrides.primeTowerBrimChamfer.mode, "prime_tower_brim_chamfer")
     include(overrides.primeTowerChamferMaxWidth.mode, "prime_tower_brim_chamfer_max_width")
     include(overrides.wipeTowerRotationAngle.mode, "wipe_tower_rotation_angle")
-    if (hasFilamentOverrides) {
+    if (hasFilamentOverrides || forceResolvedThermals) {
         keys.addAll(
             listOf(
                 "filament_type", "filament_colour", "nozzle_temperature",
@@ -181,8 +182,12 @@ internal fun buildExplicitBambuProfileOverrides(
     }
 
     val result = profileOverrides.filterKeys { it in keys }.toMutableMap()
-    if (overrides.bedTemp.mode != OverrideMode.USE_FILE) {
+    if (overrides.bedTemp.mode != OverrideMode.USE_FILE || forceResolvedThermals) {
         val value = profileOverrides["bed_temperature"] ?: return result
+        // Bambu start G-code reads the plate-specific temperature vectors,
+        // not the generic UI bed_temperature scalar. Geometry-only 3MF/STL
+        // inputs have no source filament/plate recipe, so failing to emit these
+        // leaves BambuImportedConfigComposer's PLA baseline (55°C) in place.
         result["hot_plate_temp"] = value
         result["hot_plate_temp_initial_layer"] = value
         result["textured_plate_temp"] = value
@@ -4960,6 +4965,10 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                 profileOverrides = profileOverrides,
                 overrides = slicingOverrides.value,
                 hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
+                // Geometry-only 3MF/STL files have no source recipe to preserve.
+                // Use the user's resolved filament/nozzle/bed settings rather than
+                // the Bambu target composer's PLA 220°C / 55°C fallback.
+                forceResolvedThermals = sourceConfig == null,
             )
             BambuImportedConfigComposer.compose(
                 target = sliceTarget,
@@ -6135,6 +6144,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                             profileOverrides = profileOverrides,
                             overrides = ov,
                             hasFilamentOverrides = _filamentOverrides.value.isNotEmpty(),
+                            forceResolvedThermals = _sourceConfig.value == null,
                         ).keys.joinToString(separator = "|", prefix = "|", postfix = "|")
                     } else {
                         ""
@@ -6212,12 +6222,15 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                             ?: _colorMapping.value?.distinct()?.sorted()
                             ?: listOf(_selectedExtruder.value)
                         val nonCanonicalOverride0 = _filamentOverrides.value[0]
+                        val nonCanonicalProfile0 = nonCanonicalOverride0?.filamentProfileId
+                            ?.let { id -> filaments.value.firstOrNull { it.id == id } }
                         ftTypes = applyNonCanonicalOverride(
                             slotTypes = resolveNonCanonicalHeaderPatchTypes(usedSlotsForPatch, basePresets),
                             slotTemps = resolveNonCanonicalHeaderPatchTemps(
                                 usedSlotsForPatch, basePresets, filaments.value
                             ),
                             override = nonCanonicalOverride0,
+                            explicitProfile = nonCanonicalProfile0,
                         ).first
                         ntTemps = applyNonCanonicalOverride(
                             slotTypes = resolveNonCanonicalHeaderPatchTypes(usedSlotsForPatch, basePresets),
@@ -6225,6 +6238,7 @@ class SlicerViewModel(application: Application) : AndroidViewModel(application) 
                                 usedSlotsForPatch, basePresets, filaments.value
                             ),
                             override = nonCanonicalOverride0,
+                            explicitProfile = nonCanonicalProfile0,
                         ).second
                     }
                     val ftPatched = fixFilamentTypeHeader(result.gcodePath, ftTypes)
