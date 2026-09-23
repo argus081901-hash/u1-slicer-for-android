@@ -431,11 +431,21 @@ class DefaultBambuLanClient(
                     // P2S firmware does not support the X/P-series vibration
                     // calibration pass. Sending it can reject an otherwise
                     // valid project-file command.
-                    .put("vibration_cali", model != BambuModel.P2S)
+                    .put(
+                        "vibration_cali",
+                        model != BambuModel.P2S &&
+                            model != BambuModel.A1 &&
+                            model != BambuModel.A1_MINI,
+                    )
                     .put("layer_inspect", false)
                     .put("use_ams", ams.useAms)
                     .put("cfg", "0")
-                    .put("extrude_cali_flag", 2)
+                    // HS A1 fast-start: skip the optional automatic extrusion
+                    // calibration request. Flow calibration is already disabled.
+                    .put(
+                        "extrude_cali_flag",
+                        if (model == BambuModel.A1 || model == BambuModel.A1_MINI) 0 else 2,
+                    )
                     .put("extrude_cali_manual_mode", 0)
                     // The offset pass has no meaning on a single-nozzle
                     // printer. H2D uses the same automatic tri-state default
