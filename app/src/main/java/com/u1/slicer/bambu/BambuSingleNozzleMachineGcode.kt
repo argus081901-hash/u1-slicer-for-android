@@ -57,7 +57,12 @@ internal object BambuSingleNozzleMachineGcode {
             require(text.countOccurrences(CHANGE_DIVIDER) == 1) {
                 "$target template payload must contain one change divider"
             }
-            val start = text.substringBefore(END_DIVIDER)
+            val rawStart = text.substringBefore(END_DIVIDER)
+            val start = if (target == SlicerTarget.BambuA1) {
+                rawStart.optimizedHsA1Startup()
+            } else {
+                rawStart
+            }
             val remainder = text.substringAfter(END_DIVIDER)
             val end = remainder.substringBefore(CHANGE_DIVIDER)
             val change = remainder.substringAfter(CHANGE_DIVIDER)
@@ -71,6 +76,59 @@ internal object BambuSingleNozzleMachineGcode {
     fun forTarget(target: SlicerTarget): Templates =
         templatesByTarget[target]
             ?: error("No single-nozzle Bambu templates for $target")
+
+    /**
+     * HS A1 fast-start profile.
+     *
+     * Keep homing, plate detection, nozzle cleaning and conditional ABL intact.
+     * Only remove optional/noise-heavy checks and trim material waste.
+     */
+    internal fun String.optimizedHsA1Startup(): String {
+        var result = this
+
+        // Remove the startup melody (same marker appears at block start/end).
+        result = result.removeBetweenDuplicateMarker(";=====start printer sound")
+
+        // Remove the unconditional resonance/mechanical vibration pass.
+        result = result.removeMarkedSection(
+            startMarker = ";===== mech mode fast check start",
+            endMarker = ";===== mech mode fast check end",
+        )
+
+        // Reduce the two 50 mm purge pushes to 25 mm each while preserving
+        // material loading, nozzle wiping and a final small purge.
+        result = result.replace("G1 E50 F200", "G1 E25 F200")
+        result = result.replace("G1 E5 F200", "G1 E3 F200")
+
+        // Shorten the always-run pre-print primer line. Dynamic/flow
+        // calibration is disabled separately in the project command.
+        result = result.replace(
+            "G0 X128 E8 F{outer_wall_volumetric_speed/(24/20) * 60}",
+            "G0 X128 E3 F{outer_wall_volumetric_speed/(24/20) * 60}",
+        )
+
+        return result
+    }
+
+    private fun String.removeMarkedSection(startMarker: String, endMarker: String): String {
+        val startIndex = indexOf(startMarker)
+        if (startIndex < 0) return this
+        val endIndex = indexOf(endMarker, startIndex + startMarker.length)
+        if (endIndex < 0) return this
+        val afterEnd = indexOf('\n', endIndex + endMarker.length)
+            .let { if (it < 0) length else it + 1 }
+        return removeRange(startIndex, afterEnd)
+    }
+
+    private fun String.removeBetweenDuplicateMarker(marker: String): String {
+        val first = indexOf(marker)
+        if (first < 0) return this
+        val second = indexOf(marker, first + marker.length)
+        if (second < 0) return this
+        val afterSecond = indexOf('\n', second + marker.length)
+            .let { if (it < 0) length else it + 1 }
+        return removeRange(first, afterSecond)
+    }
 
     private fun String.countOccurrences(needle: String): Int =
         windowed(needle.length).count { it == needle }
